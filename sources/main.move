@@ -40,6 +40,10 @@ module dacade_deepbook::auction {
         winning_bid: u64,
     }
 
+    // Define constants
+    const MIN_BID_INCREMENT: u64 = 10; // Adjust this value as needed
+    const MAX_AUTO_BID_AMOUNT: u64 = 1000; // Adjust this value as needed
+
     // Function to create a new auction
     public fun new_auction(car_id: u64, starting_price: u64, duration: u64, c: &Clock, ctx: &mut TxContext) {
         // Generate unique ID for the auction
@@ -159,15 +163,25 @@ module dacade_deepbook::auction {
         !self.active
     }
 
+    // Function to retrieve the result of an auction
+    public fun get_auction_result(self: &Auction) : WinningBidder {
+        assert!(!self.active, ERROR_AUCTION_COMPLETED);
+        // Use the determine_winner function to get the winner
+        determine_winner(self)
+    }
+
+    // Function to check if an auction has ended
+    public fun get_ended_auctions(self: &Auction) : bool {
+        !self.active
+    }
+
+
     // Function to check if a user is an active bidder in an auction
     public fun get_active_bidders(self: &Auction, user: address) : bool {
         // Check if the user is a bidder in the auction
         assert!(table::contains(&self.bidders, user), ERROR_NOT_BID);
         true
     }
-
-    // Define a constant for the minimum bid increment
-    const MIN_BID_INCREMENT: u64 = 10; // Adjust this value as needed
 
     // Function to withdraw a bid from an auction
     public fun withdraw_bid(cap: &AuctionCap, self: &mut Auction, ctx: &mut TxContext) : Coin<SUI> {
@@ -200,4 +214,11 @@ module dacade_deepbook::auction {
         // Call the place_bid function with the auto-bid amount
         place_bid_with_increment(cap, self, c, auto_bid_amount, ctx)
     }
+
+    // Function to retrieve bidding history of an auction
+    public fun get_bidding_history(self: &Auction) : Table<address, u64> {
+        self.bidders
+    }
 }
+
+
