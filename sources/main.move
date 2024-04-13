@@ -191,9 +191,11 @@ module dacade_deepbook::auction {
             deposit: _,
             active: _,
         } = self;
-
+        // delete the share object
         object::delete(id_);
+        // delete the table 
         table::destroy_empty(bidders_);
+        // send the item
         transfer::public_transfer(item_, buyer);
     }
 }
