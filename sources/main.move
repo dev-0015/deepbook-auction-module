@@ -15,6 +15,8 @@ module dacade_deepbook::auction {
     const ERROR_ALREADY_BID: u64 = 2;
     const ERROR_NOT_BID: u64 = 3;
     const ERROR_AUCTION_COMPLETED: u64 = 4;
+    const ERROR_NOT_OWNER: u64 = 5;
+    const ERROR_IS_ACTIVE: u64 = 6;
 
     // Define structs for auctions, auction caps, and winning bidders
     struct Auction<T: key + store> has key, store {
@@ -126,8 +128,8 @@ module dacade_deepbook::auction {
     }
 
     public fun transfer_item_price<T: key + store>(self: Bid, auction: &mut Auction<T>, ctx: &mut TxContext) {
-        assert!(sender(ctx) == auction.highest_address, ERROR_NOT_BID);
-        assert!(!auction.active, ERROR_NOT_BID);
+        assert!(sender(ctx) == auction.highest_address, ERROR_NOT_OWNER);
+        assert!(!auction.active, ERROR_IS_ACTIVE);
         let Bid {
             id: id_,
             auction_id: _,
@@ -142,7 +144,7 @@ module dacade_deepbook::auction {
     }
 
     public fun refund(self: Bid, ctx: &mut TxContext) : Coin<SUI> {
-        assert!(self.winner == sender(ctx), ERROR_ALREADY_BID);
+        assert!(self.winner == sender(ctx), ERROR_NOT_OWNER);
         let Bid {
             id: id_,
             auction_id: _,
@@ -189,8 +191,8 @@ module dacade_deepbook::auction {
         // Validate the auction cap
         assert!(cap.auction_id == object::id(&self), ERROR_INVALID_CAP);
         // Check the auction closed
-        assert!(!self.active, ERROR_AUCTION_COMPLETED);
-        assert!(self.deposit, ERROR_AUCTION_COMPLETED);
+        assert!(!self.active, ERROR_IS_ACTIVE);
+        assert!(self.deposit, ERROR_IS_ACTIVE);
 
         let Auction {
             id: id_,
