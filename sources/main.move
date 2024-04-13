@@ -141,6 +141,21 @@ module dacade_deepbook::auction {
         auction.deposit = true;
     }
 
+    public fun refund(self: Bid, ctx: &mut TxContext) : Coin<SUI> {
+        assert!(self.winner == sender(ctx), ERROR_ALREADY_BID);
+        let Bid {
+            id: id_,
+            auction_id: _,
+            balance: balance_,
+            winner: _,
+            winning_bid: _
+        } = self;
+        object::delete(id_);
+
+        let coin_ = coin::from_balance(balance_, ctx);
+        coin_
+    }
+
     // Function to end an auction
     public fun end_auction<T: key + store>(_:&AuctionCap, self: &mut Auction<T>, c: &Clock) {
         // Check if the auction has ended
