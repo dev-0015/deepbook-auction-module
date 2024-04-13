@@ -35,7 +35,7 @@ module dacade_deepbook::auction {
         auction_id: ID,
     }
 
-    struct WinningBidder has key {
+    struct Bid has key {
         id: UID,
         auction_id: ID,
         balance: Balance<SUI>,
@@ -73,7 +73,7 @@ module dacade_deepbook::auction {
     }
 
     // Function to place a bid on an auction
-    public fun bid<T: key + store>(self: &mut Auction<T>, coin: Coin<SUI>, c: &Clock, ctx: &mut TxContext) : WinningBidder {
+    public fun bid<T: key + store>(self: &mut Auction<T>, coin: Coin<SUI>, c: &Clock, ctx: &mut TxContext) : Bid {
         // Check if the auction is still active
         assert!(timestamp_ms(c) < self.end_time, ERROR_AUCTION_COMPLETED);
         // Check if the bid amount is greater than the starting price
@@ -91,7 +91,7 @@ module dacade_deepbook::auction {
             self.highest_bid = amount;
         };
         // Create a winning bidder object
-        let winning_bidder = WinningBidder {
+        let winning_bidder = Bid {
             id: object::new(ctx),
             auction_id: object::id(self),
             balance: balance::zero(),
@@ -103,26 +103,22 @@ module dacade_deepbook::auction {
         winning_bidder
     }
 
-  
-
     //Function to place a bid on an auction with minimum bid increment
-    public fun place_bid_with_increment(cap: &AuctionCap, self: &mut Auction, c: &Clock, amount: u64, ctx: &mut TxContext) : Coin<SUI> {
-        // Validate the auction cap
-        assert!(cap.auction_id == object::id(self), ERROR_INVALID_CAP);
-        // Check if the bid amount is greater than or equal to the starting price plus the minimum bid increment
-        assert!(amount >= self.starting_price + MIN_BID_INCREMENT, ERROR_INSUFFICIENT_FUNDS);
+    public fun place_bid_with_increment<T: key + store>(self: &mut Bid, auction: &mut Auction<T>, c: &Clock, coin_: Coin<SUI>, ctx: &mut TxContext) {
         // Check if the auction is still active
-        assert!(timestamp_ms(c) < self.end_time, ERROR_AUCTION_COMPLETED);
-        // Check if the sender has already placed a bid
-        assert!(!table::contains(&self.bidders, sender(ctx)), ERROR_ALREADY_BID);
-
+        assert!(timestamp_ms(c) < auction.end_time, ERROR_AUCTION_COMPLETED);        
+        // Check if the bid amount is greater than or equal to the starting price plus the minimum bid increment
+        let current = balance::value(&self.balance);
+        assert!(coin::value(&coin_) + current > auction.highest_bid, ERROR_INSUFFICIENT_FUNDS);
         // Take the bid amount from the bidder's deposit
-        let coin_ = coin::take(&mut self.deposit, amount, ctx);
-
-        // Add the bidder to the list of bidders
-        table::add(&mut self.bidders, sender(ctx), true);
-
-        coin_
+        let balance = coin::into_balance(coin_);
+        let amount = balance::value(&balance);
+        // join the balance in Bid Object 
+        balance::join(&mut self.balance, balance);
+        self.winning_bid = self. winning_bid + amount;
+        // set te auction parameters
+        auction. highest_bid = self.winning_bid;
+        auction.highest_address = sender(ctx);
     }
 
  
