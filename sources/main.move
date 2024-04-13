@@ -143,6 +143,36 @@ module dacade_deepbook::auction {
         auction.deposit = true;
     }
 
+     // Function to withdraw a bid from an auction
+    public fun close_auction<T: key + store>(cap: &AuctionCap, self: Auction<T>, ctx: &mut TxContext) {
+        // Validate the auction cap
+        assert!(cap.auction_id == object::id(&self), ERROR_INVALID_CAP);
+        // Check the auction closed
+        assert!(!self.active, ERROR_IS_ACTIVE);
+        assert!(self.deposit, ERROR_IS_ACTIVE);
+
+        let Auction {
+            id: id_,
+            owner: _,
+            car_id: _,
+            bidders: bidders_,
+            starting_price: _,
+            highest_bid: _,
+            highest_address: buyer,
+            start_time: _,
+            end_time: _,
+            item: item_,
+            deposit: _,
+            active: _,
+        } = self;
+        // delete the share object
+        object::delete(id_);
+        // delete the table 
+        table::destroy_empty(bidders_);
+        // send the item
+        transfer::public_transfer(item_, buyer);
+    }
+
     public fun refund(self: Bid, ctx: &mut TxContext) : Coin<SUI> {
         assert!(self.winner == sender(ctx), ERROR_NOT_OWNER);
         let Bid {
@@ -181,38 +211,5 @@ module dacade_deepbook::auction {
         // Check if the user is a bidder in the auction
         assert!(table::contains(&self.bidders, user), ERROR_NOT_BID);
         true
-    }
-
-    // Define a constant for the minimum bid increment
-    const MIN_BID_INCREMENT: u64 = 10; // Adjust this value as needed
-
-    // Function to withdraw a bid from an auction
-    public fun close_auction<T: key + store>(cap: &AuctionCap, self: Auction<T>, ctx: &mut TxContext) {
-        // Validate the auction cap
-        assert!(cap.auction_id == object::id(&self), ERROR_INVALID_CAP);
-        // Check the auction closed
-        assert!(!self.active, ERROR_IS_ACTIVE);
-        assert!(self.deposit, ERROR_IS_ACTIVE);
-
-        let Auction {
-            id: id_,
-            owner: _,
-            car_id: _,
-            bidders: bidders_,
-            starting_price: _,
-            highest_bid: _,
-            highest_address: buyer,
-            start_time: _,
-            end_time: _,
-            item: item_,
-            deposit: _,
-            active: _,
-        } = self;
-        // delete the share object
-        object::delete(id_);
-        // delete the table 
-        table::destroy_empty(bidders_);
-        // send the item
-        transfer::public_transfer(item_, buyer);
     }
 }
