@@ -26,6 +26,7 @@ module dacade_deepbook::auction {
         start_time: u64,
         end_time: u64,
         active: bool,
+        current_highest_bid: u64,
     }
 
     struct AuctionCap has key {
@@ -40,8 +41,14 @@ module dacade_deepbook::auction {
         winning_bid: u64,
     }
 
+    // Define a constant for the minimum bid increment
+    const MIN_BID_INCREMENT: u64 = 10; // Adjust this value as needed
+
+    // Define a constant for the maximum auto-bid amount
+    const MAX_AUTO_BID_AMOUNT: u64 = 1000; // Adjust this value as needed
+
     // Function to create a new auction
-    public fun new_auction(car_id: u64, starting_price: u64, duration: u64, c: &Clock, ctx: &mut TxContext) {
+    public fun new_auction(car_id: u64, starting_price: u64, duration: u64, min_bid_increment: u64, max_auto_bid_amount: u64, c: &Clock, ctx: &mut TxContext) {
         // Generate unique ID for the auction
         let id_ = object::new(ctx);
         let inner = object::uid_to_inner(&id_);
@@ -55,6 +62,7 @@ module dacade_deepbook::auction {
             start_time: timestamp_ms(c),
             end_time: timestamp_ms(c) + duration,
             active: true,
+            current_highest_bid: starting_price,
         };
         // Share the auction object
         transfer::share_object(auction);
@@ -71,8 +79,8 @@ module dacade_deepbook::auction {
     public fun place_bid(cap: &AuctionCap, self: &mut Auction, c: &Clock, amount: u64, ctx: &mut TxContext) : Coin<SUI> {
         // Validate the auction cap
         assert!(cap.auction_id == object::id(self), ERROR_INVALID_CAP);
-        // Check if the bid amount is greater than the starting price
-        assert!(amount > self.starting_price, ERROR_INSUFFICIENT_FUNDS);
+        // Check if the bid amount is greater than the current highest bid
+        assert!(amount > self.current_highest_bid, ERROR_INSUFFICIENT_FUNDS);
         // Check if the auction is still active
         assert!(timestamp_ms(c) < self.end_time, ERROR_AUCTION_COMPLETED);
         // Check if the sender has already placed a bid
@@ -83,6 +91,9 @@ module dacade_deepbook::auction {
 
         // Take the bid amount from the bidder's deposit
         let coin_ = coin::take(&mut self.deposit, amount, ctx);
+
+        // Update the current highest bid
+        self.current_highest_bid = amount;
 
         // Add the bidder to the list of bidders
         table::add(&mut self.bidders, sender(ctx), true);
@@ -94,8 +105,8 @@ module dacade_deepbook::auction {
     public fun place_bid_with_increment(cap: &AuctionCap, self: &mut Auction, c: &Clock, amount: u64, ctx: &mut TxContext) : Coin<SUI> {
         // Validate the auction cap
         assert!(cap.auction_id == object::id(self), ERROR_INVALID_CAP);
-        // Check if the bid amount is greater than or equal to the starting price plus the minimum bid increment
-        assert!(amount >= self.starting_price + MIN_BID_INCREMENT, ERROR_INSUFFICIENT_FUNDS);
+        // Check if the bid amount is greater than the current highest bid plus the minimum bid increment
+        assert!(amount >= self.current_highest_bid + MIN_BID_INCREMENT, ERROR_INSUFFICIENT_FUNDS);
         // Check if the auction is still active
         assert!(timestamp_ms(c) < self.end_time, ERROR_AUCTION_COMPLETED);
         // Check if the sender has already placed a bid
@@ -107,38 +118,13 @@ module dacade_deepbook::auction {
         // Take the bid amount from the bidder's deposit
         let coin_ = coin::take(&mut self.deposit, amount, ctx);
 
+        // Update the current highest bid
+        self.current_highest_bid = amount;
+
         // Add the bidder to the list of bidders
         table::add(&mut self.bidders, sender(ctx), true);
 
         coin_
-    }
-
-    // Function to place a bid on an auction
-    public fun bid(self: &mut Auction, coin: Coin<SUI>, c: &Clock, ctx: &mut TxContext) : WinningBidder {
-        // Check if the auction is still active
-        assert!(timestamp_ms(c) < self.end_time, ERROR_AUCTION_COMPLETED);
-        // Copy the value of the coin before moving it
-        let coin_value = coin::value(&coin);
-        // Check if the bid amount is greater than the starting price
-        assert!(coin_value > self.starting_price, ERROR_INSUFFICIENT_FUNDS);
-        // Check if the sender has already placed a bid
-        assert!(!table::contains(&self.bidders, sender(ctx)), ERROR_ALREADY_BID);
-
-        // Move the bid amount into the auction's deposit
-        let balance_ = coin::into_balance(coin);
-        balance::join(&mut self.deposit, balance_);
-
-        // Add the bidder to the list of bidders
-        table::add(&mut self.bidders, sender(ctx), true);
-
-        // Create a winning bidder object
-        let winning_bidder = WinningBidder {
-            id: object::new(ctx),
-            auction_id: object::id(self),
-            winner: sender(ctx),
-            winning_bid: coin_value,
-        };
-        winning_bidder
     }
 
     // Function to end an auction
@@ -162,42 +148,18 @@ module dacade_deepbook::auction {
     // Function to check if a user is an active bidder in an auction
     public fun get_active_bidders(self: &Auction, user: address) : bool {
         // Check if the user is a bidder in the auction
-        assert!(table::contains(&self.bidders, user), ERROR_NOT_BID);
-        true
+        table::contains(&self.bidders, user)
     }
-
-    // Define a constant for the minimum bid increment
-    const MIN_BID_INCREMENT: u64 = 10; // Adjust this value as needed
-
-    // Function to withdraw a bid from an auction
-    public fun withdraw_bid(cap: &AuctionCap, self: &mut Auction, ctx: &mut TxContext) : Coin<SUI> {
-        // Validate the auction cap
-        assert!(cap.auction_id == object::id(self), ERROR_INVALID_CAP);
-        // Check if the sender has placed a bid
-        assert!(table::contains(&self.bidders, sender(ctx)), ERROR_NOT_BID);
-        
-        // Retrieve the bid amount from the auction's deposit and remove the bidder from the list
-        let bid_amount = balance::value(&self.deposit);
-        let coin_ = coin::take(&mut self.deposit, bid_amount, ctx);
-        table::remove(&mut self.bidders, sender(ctx));
-        
-        coin_
-    }
-
-    // Function to check if a bid meets the minimum bid increment requirement
-    public fun meets_min_bid_increment(current_bid: u64, new_bid: u64) : bool {
-        new_bid >= current_bid + MIN_BID_INCREMENT
-    }
-
-    // Define a constant for the maximum auto-bid amount
-    const MAX_AUTO_BID_AMOUNT: u64 = 1000; // Adjust this value as needed
 
     // Function to place an auto-bid on an auction
     public fun place_auto_bid(cap: &AuctionCap, self: &mut Auction, c: &Clock, ctx: &mut TxContext) : Coin<SUI> {
         // Calculate the auto-bid amount (e.g., based on user preferences)
-        let auto_bid_amount = MAX_AUTO_BID_AMOUNT; // Example: Fixed auto-bid amount
-        
-        // Call the place_bid function with the auto-bid amount
+        let auto_bid_amount = self.current_highest_bid + MIN_BID_INCREMENT;
+        if auto_bid_amount > MAX_AUTO_BID_AMOUNT {
+            auto_bid_amount = MAX_AUTO_BID_AMOUNT;
+        }
+
+        // Call the place_bid_with_increment function with the auto-bid amount
         place_bid_with_increment(cap, self, c, auto_bid_amount, ctx)
     }
 }
