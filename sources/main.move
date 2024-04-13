@@ -19,6 +19,7 @@ module dacade_deepbook::auction {
     // Define structs for auctions, auction caps, and winning bidders
     struct Auction<T: key + store> has key, store {
         id: UID,
+        owner: address,
         car_id: u64,
         bidders: Table<address, bool>,
         starting_price: u64,
@@ -27,6 +28,7 @@ module dacade_deepbook::auction {
         start_time: u64,
         end_time: u64,
         item: T,
+        deposit: bool,
         active: bool,
     }
 
@@ -51,6 +53,7 @@ module dacade_deepbook::auction {
         // Create the auction object
         let auction = Auction {
             id: id_,
+            owner: sender(ctx),
             car_id: car_id,
             bidders: table::new(ctx),
             starting_price: starting_price,
@@ -59,6 +62,7 @@ module dacade_deepbook::auction {
             start_time: timestamp_ms(c),
             end_time: timestamp_ms(c) + duration,
             item: item_,
+            deposit: false,
             active: true,
         };
         // Share the auction object
@@ -121,65 +125,75 @@ module dacade_deepbook::auction {
         auction.highest_address = sender(ctx);
     }
 
- 
+    public fun transfer_item_price<T: key + store>(self: Bid, auction: &mut Auction<T>, ctx: &mut TxContext) {
+        assert!(sender(ctx) == auction.highest_address, ERROR_NOT_BID);
+        assert!(!auction.active, ERROR_NOT_BID);
+        let Bid {
+            id: id_,
+            auction_id: _,
+            balance: balance_,
+            winner: _,
+            winning_bid: _
+        } = self; 
+        object::delete(id_);
+        let coin_ = coin::from_balance(balance_, ctx);
+        transfer::public_transfer(coin_, auction.owner);
+        auction.deposit = true;
+    }
 
-    // // Function to end an auction
-    // public fun end_auction(self: &mut Auction, c: &Clock) {
-    //     // Check if the auction has ended
-    //     assert!(timestamp_ms(c) >= self.end_time, ERROR_AUCTION_COMPLETED);
-    //     // Set the auction as inactive
-    //     self.active = false;
-    // }
+    // Function to end an auction
+    public fun end_auction<T: key + store>(_:&AuctionCap, self: &mut Auction<T>, c: &Clock) {
+        // Check if the auction has ended
+        assert!(timestamp_ms(c) >= self.end_time, ERROR_AUCTION_COMPLETED);
+        // Set the auction as inactive
+        self.active = false;
+    }
 
-    // // Function to get the winning bidder of an auction
-    // public fun get_winning_bidder(winner: &WinningBidder) : (ID, address) {
-    //     (winner.auction_id, winner.winner)
-    // }
+    // Function to get the winning bidder of an auction
+    public fun get_winning_bidder(self: &Bid) : (ID, address) {
+        (self.auction_id, self.winner)
+    }
 
-    // // Function to check if an auction has ended
-    // public fun get_ended_auctions(self: &Auction) : bool {
-    //     !self.active
-    // }
+    // Function to check if an auction has ended
+    public fun get_ended_auctions<T: key + store>(self: &Auction<T>) : bool {
+        !self.active
+    }
 
-    // // Function to check if a user is an active bidder in an auction
-    // public fun get_active_bidders(self: &Auction, user: address) : bool {
-    //     // Check if the user is a bidder in the auction
-    //     assert!(table::contains(&self.bidders, user), ERROR_NOT_BID);
-    //     true
-    // }
+    // Function to check if a user is an active bidder in an auction
+    public fun get_active_bidders<T: key + store>(self: &Auction<T>, user: address) : bool {
+        // Check if the user is a bidder in the auction
+        assert!(table::contains(&self.bidders, user), ERROR_NOT_BID);
+        true
+    }
 
-    // // Define a constant for the minimum bid increment
-    // const MIN_BID_INCREMENT: u64 = 10; // Adjust this value as needed
+    // Define a constant for the minimum bid increment
+    const MIN_BID_INCREMENT: u64 = 10; // Adjust this value as needed
 
-    // // Function to withdraw a bid from an auction
-    // public fun withdraw_bid(cap: &AuctionCap, self: &mut Auction, ctx: &mut TxContext) : Coin<SUI> {
-    //     // Validate the auction cap
-    //     assert!(cap.auction_id == object::id(self), ERROR_INVALID_CAP);
-    //     // Check if the sender has placed a bid
-    //     assert!(table::contains(&self.bidders, sender(ctx)), ERROR_NOT_BID);
-        
-    //     // Retrieve the bid amount from the auction's deposit and remove the bidder from the list
-    //     let bid_amount = balance::value(&self.deposit);
-    //     let coin_ = coin::take(&mut self.deposit, bid_amount, ctx);
-    //     table::remove(&mut self.bidders, sender(ctx));
-        
-    //     coin_
-    // }
+    // Function to withdraw a bid from an auction
+    public fun close_auction<T: key + store>(cap: &AuctionCap, self: Auction<T>, ctx: &mut TxContext) {
+        // Validate the auction cap
+        assert!(cap.auction_id == object::id(&self), ERROR_INVALID_CAP);
+        // Check the auction closed
+        assert!(!self.active, ERROR_AUCTION_COMPLETED);
+        assert!(self.deposit, ERROR_AUCTION_COMPLETED);
 
-    // // Function to check if a bid meets the minimum bid increment requirement
-    // public fun meets_min_bid_increment(current_bid: u64, new_bid: u64) : bool {
-    //     new_bid >= current_bid + MIN_BID_INCREMENT
-    // }
+        let Auction {
+            id: id_,
+            owner: _,
+            car_id: _,
+            bidders: bidders_,
+            starting_price: _,
+            highest_bid: _,
+            highest_address: buyer,
+            start_time: _,
+            end_time: _,
+            item: item_,
+            deposit: _,
+            active: _,
+        } = self;
 
-    // // Define a constant for the maximum auto-bid amount
-    // const MAX_AUTO_BID_AMOUNT: u64 = 1000; // Adjust this value as needed
-
-    // // Function to place an auto-bid on an auction
-    // public fun place_auto_bid(cap: &AuctionCap, self: &mut Auction, c: &Clock, ctx: &mut TxContext) : Coin<SUI> {
-    //     // Calculate the auto-bid amount (e.g., based on user preferences)
-    //     let auto_bid_amount = MAX_AUTO_BID_AMOUNT; // Example: Fixed auto-bid amount
-        
-    //     // Call the place_bid function with the auto-bid amount
-    //     place_bid_with_increment(cap, self, c, auto_bid_amount, ctx)
-    // }
+        object::delete(id_);
+        table::destroy_empty(bidders_);
+        transfer::public_transfer(item_, buyer);
+    }
 }
